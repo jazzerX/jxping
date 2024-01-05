@@ -32,6 +32,11 @@ func main() {
 
 	defer conn.Close()
 
+	ip4conn := conn.IPv4PacketConn()
+
+	ip4conn.SetTTL(64)
+	ip4conn.SetControlMessage(ipv4.FlagTTL, true)
+
 	for i := 0; i < 4; i++ {
 		msg := icmp.Message{
 			Type: ipv4.ICMPTypeEcho,
@@ -46,19 +51,21 @@ func main() {
 		binMsg, err := msg.Marshal(nil)
 		start := time.Now()
 
-		if _, err := conn.WriteTo(binMsg, &net.IPAddr{IP: net.ParseIP(ip.String())}); err != nil {
+		packetConn := ip4conn.PacketConn
+
+		if _, err := packetConn.WriteTo(binMsg, &net.IPAddr{IP: net.ParseIP(ip.String())}); err != nil {
 			log.Fatal(err)
 		}
 
 		reply := make([]byte, 256)
 
-		err = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		err = ip4conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		if err != nil {
 			log.Fatal(err)
 		}
-		n, _, err := conn.ReadFrom(reply)
+		n, cm, _, err := ip4conn.ReadFrom(reply)
 
-		if err != nil {
+		if err != nil && cm == nil {
 			log.Fatal(err)
 		}
 
@@ -76,7 +83,7 @@ func main() {
 				log.Fatal("invalid ICMP Echo Reply message")
 			}
 
-			fmt.Printf("%d bytes from %s: seq = %d time = %v\n", n, addr, echoReply.Seq, duration)
+			fmt.Printf("%d bytes from %s: seq = %d ttl = %d time = %v\n", n, addr, echoReply.Seq, cm.TTL, duration)
 		}
 	}
 }
